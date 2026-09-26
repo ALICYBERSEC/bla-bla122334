@@ -3,21 +3,14 @@ on: [push, workflow_dispatch]
 jobs:
   solve:
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: memcmp break sweep
+      - name: watch gc copy
         run: |
           set +e
           chmod +x real_bin
-          : > cmp.txt
-          for L in $(seq 1 26); do
-            ch=$(printf 'Z%.0s' $(seq 1 $L))
-            printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$ch" "$ch" "$ch" "$ch" "$ch" "$ch" > input.txt
-            ( xcrun lldb -b -o "command script import ./solve.py" -o quit >/dev/null 2>&1 ) & P=$!
-            ( sleep 25; kill $P 2>/dev/null ) & wait $P 2>/dev/null
-          done
-          echo "==== comparisons captured (non-Z side = expected) ===="
-          cat cmp.txt
-          echo "==== unique B/A values ===="
-          grep -aE '^  [AB]=' cmp.txt | grep -avE "Z{3}" | sort -u
+          printf 'MK7pQ2wZx9Rt\nBBBB\nCCCC\nDDDD\nEEEE\nFFFF\n' > input.txt
+          ( xcrun lldb -b -o "command script import ./solve.py" -o quit 2>&1 | tail -5 ) & P=$!
+          ( sleep 200; kill $P 2>/dev/null ) & wait $P 2>/dev/null
+          echo "==== cmp.txt ===="; cat cmp.txt
