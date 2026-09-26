@@ -3,20 +3,14 @@ on: [push, workflow_dispatch]
 jobs:
   solve:
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: sweep
+      - name: dump expected hashes
         run: |
           set +e
           chmod +x real_bin
-          : > cmp.txt
-          A="Zq7Wp3Kx9Rt2Yv8Nb5JcAa1Bb2Cc3Dd4Ee5"
-          for L in $(seq 3 30); do
-            echo "$L" > LEN.txt
-            m=$(printf '%s' "$A" | cut -c1-$L)
-            printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$m" "$m" "$m" "$m" "$m" "$m" > input.txt
-            ( xcrun lldb -b -o "command script import ./solve.py" -o quit >/dev/null 2>&1 ) & P=$!
-            ( sleep 30; kill $P 2>/dev/null ) & wait $P 2>/dev/null
-          done
-          echo "==== cmp.txt ===="; cat cmp.txt
+          printf 'reduce_not_deflate\njbig2_fax_geometry\nAAAA\nBBBB\nCCCC\nDDDD\n' > input.txt
+          ( xcrun lldb -b -o "command script import ./solve.py" -o quit 2>&1 | tail -3 ) & P=$!
+          ( sleep 120; kill $P 2>/dev/null ) & wait $P 2>/dev/null
+          echo "==== hashes.txt ===="; cat hashes.txt
