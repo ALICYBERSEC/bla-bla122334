@@ -1,7 +1,6 @@
 import lldb
 ALPHA=b"Zq7Wp3Kx9Rt2Yv8Nb5Jc"
-def marker(L): 
-    s=(ALPHA*3)[:L]; return s
+def marker(L): return (ALPHA*3)[:L]
 def dis1(t,a):
     e=lldb.SBError(); d=t.ReadMemory(lldb.SBAddress(a,t),16,e)
     if not e.Success(): return "?"
@@ -11,13 +10,17 @@ def search_heap(proc, needle):
     ml=proc.GetMemoryRegions(); reg=lldb.SBMemoryRegionInfo()
     for i in range(ml.GetSize()):
         if not ml.GetMemoryRegionAtIndex(i,reg): continue
+        if not reg.IsReadable(): continue
         b=reg.GetRegionBase(); e=reg.GetRegionEnd()
-        if b<0x600000000000 or b>=0x800000000000: continue
-        if e-b>(32<<20): continue
-        err=lldb.SBError(); d=proc.ReadMemory(b,e-b,err)
-        if not err.Success(): continue
-        j=d.find(needle)
-        if j>=0: return b+j
+        if b<0x100000000000: continue
+        addr=b
+        while addr<e:
+            chunk=min(4<<20, e-addr)
+            err=lldb.SBError(); d=proc.ReadMemory(addr, chunk, err)
+            if err.Success():
+                j=d.find(needle)
+                if j>=0: return addr+j
+            addr+=chunk-64
     return None
 def rd(proc,a,n):
     if a<0x1000: return None
@@ -34,16 +37,15 @@ def main():
         th=proc.GetSelectedThread(); fr=th.GetFrameAtIndex(0); reason=th.GetStopReason()
         if reason==lldb.eStopReasonBreakpoint and stage==0:
             if fr.FindRegister("x0").GetValueAsUnsigned()==0:
-                for _ in range(120):
-                    for _ in range(6): th.StepInstruction(False)
+                for _ in range(30):
+                    for _ in range(12): th.StepInstruction(False)
                     gc=search_heap(proc, MK)
                     if gc: break
                 if gc:
                     werr=lldb.SBError(); t.WatchAddress(gc,1,True,False,werr)
                     log.write("L=%d GC@%#x watch=%s\n"%(L,gc,werr.Success())); stage=2
                     proc.Continue(); continue
-                else:
-                    log.write("L=%d no GC copy found\n"%L); break
+                log.write("L=%d no GC copy\n"%L); break
             proc.Continue(); continue
         elif reason==lldb.eStopReasonWatchpoint and stage==2:
             hits+=1; pc=fr.GetPC()
@@ -55,10 +57,10 @@ def main():
                     s=rd(proc,v,L+2)
                     if s and all(32<=c<127 for c in s[:2]) and s[:L]!=MK:
                         log.write("     x%d->%r\n"%(r,s))
-            if hits>=50: break
+            if hits>=60: break
             proc.Continue(); continue
         else:
             proc.Continue()
-    if stage==2 and appreads==0: log.write("L=%d watched, NO app read\n"%L)
+    if stage==2 and appreads==0: log.write("L=%d watched, NO app read (wrong len)\n"%L)
     log.close()
 main()
