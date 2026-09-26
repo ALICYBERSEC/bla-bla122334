@@ -6,22 +6,15 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: probe unwind oracle
+      - name: count funcs
         run: |
           set +e
           chmod +x real_bin
-          clang -arch arm64 -dynamiclib -o probe.dylib probe.c && echo built
-          probe () {
-            ( printf "$2" | DYLD_INSERT_LIBRARIES=./probe.dylib ./real_bin >x.txt 2>&1 ) & P=$!
-            ( sleep 8; kill $P 2>/dev/null ) & wait $P 2>/dev/null
-            c=$(grep -a UNWIND_COUNT x.txt | tail -1)
-            out=$(grep -a 'n0p3\|/6' x.txt | tail -1)
-            echo "$1 :: $c :: $out"
-          }
-          probe "len1   " 'A\nA\nA\nA\nA\nA\n'
-          probe "len4   " 'AAAA\nAAAA\nAAAA\nAAAA\nAAAA\nAAAA\n'
-          probe "len8   " 'AAAAAAAA\nAAAAAAAA\nAAAAAAAA\nAAAAAAAA\nAAAAAAAA\nAAAAAAAA\n'
-          probe "len16  " 'AAAAAAAAAAAAAAAA\nA\nA\nA\nA\nA\n'
-          probe "diffB  " 'BBBB\nBBBB\nBBBB\nBBBB\nBBBB\nBBBB\n'
-          probe "empties" '\n\n\n\n\n\n'
-          probe "atflare" '@flare-on.com\n@flare-on.com\n@flare-on.com\n@flare-on.com\n@flare-on.com\n@flare-on.com\n'
+          clang -arch arm64 -dynamiclib -o cnt.dylib cnt.c && echo built
+          probe(){ ( printf "$2" | DYLD_INSERT_LIBRARIES=./cnt.dylib ./real_bin >x.txt 2>&1 ) & P=$!; ( sleep 8; kill $P 2>/dev/null ) & wait $P 2>/dev/null; echo "$1 :: $(grep -a '^CNT' x.txt|tail -1)"; }
+          probe "AAAA " 'AAAA\nAAAA\nAAAA\nAAAA\nAAAA\nAAAA\n'
+          probe "BBBB " 'BBBB\nBBBB\nBBBB\nBBBB\nBBBB\nBBBB\n'
+          probe "line1a" 'a\nA\nA\nA\nA\nA\n'
+          probe "line1b" 'b\nA\nA\nA\nA\nA\n'
+          probe "line1y" 'y\nA\nA\nA\nA\nA\n'
+          probe "long  " 'AAAAAAAAAAAAAAAAAAAA\nA\nA\nA\nA\nA\n'
