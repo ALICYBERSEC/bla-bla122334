@@ -6,20 +6,17 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: run real_bin
+      - name: interpose + run
         run: |
           set +e
           chmod +x real_bin
-          file real_bin; echo "size $(stat -f%z real_bin)"
-          guard () {
+          clang -arch arm64 -dynamiclib -o hook.dylib hook.c && echo "built hook.dylib"
+          run() {
             echo "======== $1 ========"
-            ( eval "$2" | ./real_bin >o.txt 2>&1 ) & P=$!
-            ( sleep 45; kill $P 2>/dev/null ) 2>/dev/null &
-            wait $P 2>/dev/null
+            ( printf "$2" | DYLD_INSERT_LIBRARIES=./hook.dylib ./real_bin >o.txt 2>&1 ) & P=$!
+            ( sleep 40; kill $P 2>/dev/null ) & wait $P 2>/dev/null
             cat o.txt
           }
-          guard "no input"   'printf ""'
-          guard "empty line" 'printf "\n"'
-          guard "AAAA"       'printf "AAAA\n"'
-          echo "======== FLAG? ========"
-          grep -aiE 'flare-on\.com|@flare|flag\{' o.txt 2>/dev/null || echo "(scan output above too)"
+          run "six distinct" 'AAAA\nBBBB\nCCCC\nDDDD\nEEEE\nFFFF\n'
+          echo "======== possible flag parts (from B= lines) ========"
+          grep -aA2 -E '\[memcmp|\[strcmp|\[bcmp|\[strncmp' o.txt | grep -aE 'B=' | sort -u
