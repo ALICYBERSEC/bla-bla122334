@@ -1,35 +1,68 @@
 import lldb
-def rdstr(proc, addr, n):
-    if not addr or n<=0 or n>128: return None
-    err=lldb.SBError(); data=proc.ReadMemory(addr, n, err)
-    if not err.Success(): return None
-    return data
-def printable(b):
-    return b is not None and all(32<=c<127 for c in b)
+MARK=b"MK7pQ2wZx9Rt"
+def regions_search(proc, needle):
+    res=[]
+    ml=proc.GetMemoryRegions()
+    reg=lldb.SBMemoryRegionInfo()
+    for i in range(ml.GetSize()):
+        if not ml.GetMemoryRegionAtIndex(i, reg): continue
+        if not reg.IsReadable(): continue
+        base=reg.GetRegionBase(); end=reg.GetRegionEnd()
+        if end-base > (64<<20): continue
+        err=lldb.SBError(); data=proc.ReadMemory(base, end-base, err)
+        if not err.Success(): continue
+        start=0
+        while True:
+            j=data.find(needle, start)
+            if j<0: break
+            res.append(base+j); start=j+1
+    return res
+def dis1(target, addr):
+    err=lldb.SBError(); data=target.ReadMemory(lldb.SBAddress(addr,target),16,err)
+    if not err.Success(): return "?"
+    insts=target.GetInstructions(lldb.SBAddress(addr,target), data)
+    if insts.GetSize()==0: return "?"
+    ins=insts.GetInstructionAtIndex(0)
+    return "%s %s"%(ins.GetMnemonic(target), ins.GetOperands(target))
 def main():
     dbg=lldb.SBDebugger.Create(); dbg.SetAsync(False)
     target=dbg.CreateTarget("./real_bin")
-    log=open("cmp.txt","a")
-    for name in ("memcmp","bcmp","memcmp$VARIANT$mvx","_platform_memcmp"):
-        target.BreakpointCreateByName(name)
+    log=open("cmp.txt","w")
+    bp=target.BreakpointCreateByName("read")
     li=target.GetLaunchInfo(); li.AddOpenFileAction(0,"input.txt",True,False)
     err=lldb.SBError(); proc=target.Launch(li, err)
-    seen=set(); n=0
+    stage=0; watched=None; hits=0
     while proc.GetState()==lldb.eStateStopped:
-        th=proc.GetSelectedThread(); fr=th.GetFrameAtIndex(0)
-        if th.GetStopReason()==lldb.eStopReasonBreakpoint:
-            x0=fr.FindRegister("x0").GetValueAsUnsigned()
-            x1=fr.FindRegister("x1").GetValueAsUnsigned()
-            x2=fr.FindRegister("x2").GetValueAsUnsigned()
-            if 2<=x2<=64:
-                a=rdstr(proc,x0,x2); b=rdstr(proc,x1,x2)
-                if printable(a) or printable(b):
-                    key=(bytes(a) if a else b'', bytes(b) if b else b'')
-                    if key not in seen:
-                        seen.add(key)
-                        log.write("memcmp len=%d\n  A=%r\n  B=%r\n"%(x2, bytes(a) if a else None, bytes(b) if b else None))
-            n+=1
-            if n>4000: break
-        proc.Continue()
+        th=proc.GetSelectedThread(); fr=th.GetFrameAtIndex(0); reason=th.GetStopReason()
+        if reason==lldb.eStopReasonBreakpoint and stage==0:
+            if fr.FindRegister("x0").GetValueAsUnsigned()==0:
+                th.StepOut()
+                for _ in range(400): th.StepInstruction(False)
+                locs=regions_search(proc, MARK)
+                log.write("MARK locations: %s\n"%[hex(x) for x in locs])
+                gc=[a for a in locs if a>=0x600000000000] or locs
+                if gc:
+                    watched=gc[-1]
+                    werr=lldb.SBError()
+                    target.WatchAddress(watched,1,True,False,werr)
+                    log.write("watch GC copy @ %#x err=%s\n"%(watched,werr))
+                stage=1
+                proc.Continue(); continue
+            proc.Continue(); continue
+        elif reason==lldb.eStopReasonWatchpoint:
+            hits+=1
+            pc=fr.GetPC()
+            xs=" ".join("x%d=%#x"%(r,fr.FindRegister("x%d"%r).GetValueAsUnsigned()) for r in (0,1,2,3,8,9,10,19,20,21,22,23,24))
+            log.write("---- read of GC copy hit %d pc=%#x  %s\n     %s\n"%(hits,pc,dis1(target,pc),xs))
+            for r in (0,1,2,3,19,20,21,22,23,24):
+                v=fr.FindRegister("x%d"%r).GetValueAsUnsigned()
+                if v>0x100000000:
+                    e=lldb.SBError(); dd=proc.ReadMemory(v,20,e)
+                    if e.Success() and dd and all(32<=c<127 for c in dd[:6]):
+                        log.write("       x%d->%r\n"%(r,bytes(dd)))
+            if hits>=40: break
+            proc.Continue(); continue
+        else:
+            proc.Continue()
     log.close()
 main()
