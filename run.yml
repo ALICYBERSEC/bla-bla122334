@@ -1,0 +1,29 @@
+name: run-clickme
+on: [push, workflow_dispatch]
+jobs:
+  solve:
+    runs-on: macos-15        # Apple Silicon (arm64) runner
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Info
+        run: |
+          uname -m
+          file click_me
+      - name: Run click_me (plain)
+        run: |
+          chmod +x click_me
+          # run with a timeout in case it waits on input; capture everything
+          ( ./click_me </dev/null 2>&1 || true ) | tee out_plain.txt
+      - name: Run under Frida (dumps flag if it validates input)
+        run: |
+          python3 -m pip install --quiet frida-tools || true
+          # try feeding a dummy line, hook output/memcpy for the flag
+          ( printf 'AAAA\n' | frida -f ./click_me -l dump_flag.js --runtime=v8 2>&1 || true ) | tee out_frida.txt
+      - name: Show results
+        run: |
+          echo "=== PLAIN ==="; cat out_plain.txt
+          echo "=== FRIDA ==="; cat out_frida.txt
+          echo "=== any flag ==="; grep -aiE 'flare-on\.com' out_*.txt || echo "no flag line yet"
+      - uses: actions/upload-artifact@v4
+        with: { name: output, path: out_*.txt }
