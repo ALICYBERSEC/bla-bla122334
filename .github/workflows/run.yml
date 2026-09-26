@@ -3,24 +3,15 @@ on: [push, workflow_dispatch]
 jobs:
   solve:
     runs-on: macos-15
-    timeout-minutes: 15
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: length sweep
+      - name: memscan
         run: |
           set +e
           chmod +x real_bin
-          clang -arch arm64 -dynamiclib -o hook.dylib hook.c && echo built
-          : > all.txt
-          for L in $(seq 1 40); do
-            line=$(printf 'A%.0s' $(seq 1 $L))
-            inp=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$line" "$line" "$line" "$line" "$line" "$line")
-            ( printf '%s' "$inp" | DYLD_INSERT_LIBRARIES=./hook.dylib ./real_bin >o.txt 2>&1 ) & P=$!
-            ( sleep 8; kill $P 2>/dev/null ) & wait $P 2>/dev/null
-            echo "===== L=$L =====" >> all.txt
-            grep -aA2 'MEMCMP' o.txt >> all.txt 2>/dev/null
-          done
-          echo "======== ALL MEMCMP HITS ========"
-          cat all.txt
-          echo "======== unique values ========"
-          grep -aE '^  [AB]=' all.txt | sort -u
+          clang -arch arm64 -dynamiclib -o scan.dylib scan.c && echo built
+          ( yes '' | head -50 | DYLD_INSERT_LIBRARIES=./scan.dylib ./real_bin >o.txt 2>&1 ) & P=$!
+          ( sleep 30; kill $P 2>/dev/null ) & wait $P 2>/dev/null
+          echo "==== program output ===="; head -20 o.txt
+          echo "==== HITS ===="; grep -a 'HIT' o.txt | sort -u
