@@ -21,8 +21,8 @@ def main():
         th=proc.GetSelectedThread(); fr=th.GetFrameAtIndex(0); reason=th.GetStopReason()
         if reason==lldb.eStopReasonBreakpoint and stage==0:
             if fr.FindRegister("x0").GetValueAsUnsigned()==0:
+                buf=fr.FindRegister("x1").GetValueAsUnsigned()   # capture BEFORE StepOut
                 th.StepOut()
-                buf=fr.FindRegister("x1").GetValueAsUnsigned()
                 werr=lldb.SBError(); t.WatchAddress(buf,1,True,False,werr)
                 log.write("L=%d watch raw@%#x=%s\n"%(L,buf,werr.Success())); stage=1
                 proc.Continue(); continue
