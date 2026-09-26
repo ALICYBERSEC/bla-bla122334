@@ -3,14 +3,19 @@ on: [push, workflow_dispatch]
 jobs:
   solve:
     runs-on: macos-15
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: watch gc copy
+      - name: sweep
         run: |
           set +e
           chmod +x real_bin
-          printf 'MK7pQ2wZx9Rt\nBBBB\nCCCC\nDDDD\nEEEE\nFFFF\n' > input.txt
-          ( xcrun lldb -b -o "command script import ./solve.py" -o quit 2>&1 | tail -5 ) & P=$!
-          ( sleep 200; kill $P 2>/dev/null ) & wait $P 2>/dev/null
+          : > cmp.txt
+          for L in $(seq 3 18); do
+            echo "$L" > LEN.txt
+            line=$(printf 'M%.0s' $(seq 1 $L))
+            printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$line" "$line" "$line" "$line" "$line" "$line" > input.txt
+            ( xcrun lldb -b -o "command script import ./solve.py" -o quit >/dev/null 2>&1 ) & P=$!
+            ( sleep 45; kill $P 2>/dev/null ) & wait $P 2>/dev/null
+          done
           echo "==== cmp.txt ===="; cat cmp.txt
