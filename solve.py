@@ -6,46 +6,41 @@ def dis1(t,a):
     if not e.Success(): return "?"
     ins=t.GetInstructions(lldb.SBAddress(a,t),d)
     return "%s %s"%(ins.GetInstructionAtIndex(0).GetMnemonic(t),ins.GetInstructionAtIndex(0).GetOperands(t)) if ins.GetSize() else "?"
-def search_heap(proc, needle):
-    ml=proc.GetMemoryRegions(); reg=lldb.SBMemoryRegionInfo()
-    for i in range(ml.GetSize()):
-        if not ml.GetMemoryRegionAtIndex(i,reg): continue
-        if not reg.IsReadable(): continue
-        b=reg.GetRegionBase(); e=reg.GetRegionEnd()
-        if b<0x100000000000: continue
-        addr=b
-        while addr<e:
-            chunk=min(4<<20, e-addr)
-            err=lldb.SBError(); d=proc.ReadMemory(addr, chunk, err)
-            if err.Success():
-                j=d.find(needle)
-                if j>=0: return addr+j
-            addr+=chunk-64
-    return None
 def rd(proc,a,n):
     if a<0x1000: return None
     e=lldb.SBError(); d=proc.ReadMemory(a,n,e); return bytes(d) if e.Success() else None
 def main():
-    L=int(open("LEN.txt").read().strip()); MK=marker(L)
+    L=int(open("LEN.txt").read().strip()); MK=marker(L); PRE=MK[:4]
     dbg=lldb.SBDebugger.Create(); dbg.SetAsync(False)
     t=dbg.CreateTarget("./real_bin"); log=open("cmp.txt","a")
     t.BreakpointCreateByName("read")
     li=t.GetLaunchInfo(); li.AddOpenFileAction(0,"input.txt",True,False)
     err=lldb.SBError(); proc=t.Launch(li,err)
-    stage=0; gc=None; hits=0; appreads=0
+    stage=0; hits=0; appreads=0; rawhits=0; gc=None
     while proc.GetState()==lldb.eStateStopped:
         th=proc.GetSelectedThread(); fr=th.GetFrameAtIndex(0); reason=th.GetStopReason()
         if reason==lldb.eStopReasonBreakpoint and stage==0:
             if fr.FindRegister("x0").GetValueAsUnsigned()==0:
-                for _ in range(30):
-                    for _ in range(12): th.StepInstruction(False)
-                    gc=search_heap(proc, MK)
-                    if gc: break
-                if gc:
-                    werr=lldb.SBError(); t.WatchAddress(gc,1,True,False,werr)
-                    log.write("L=%d GC@%#x watch=%s\n"%(L,gc,werr.Success())); stage=2
-                    proc.Continue(); continue
-                log.write("L=%d no GC copy\n"%L); break
+                th.StepOut()
+                buf=fr.FindRegister("x1").GetValueAsUnsigned()
+                werr=lldb.SBError(); t.WatchAddress(buf,1,True,False,werr)
+                log.write("L=%d watch raw@%#x=%s\n"%(L,buf,werr.Success())); stage=1
+                proc.Continue(); continue
+            proc.Continue(); continue
+        elif reason==lldb.eStopReasonWatchpoint and stage==1:
+            rawhits+=1
+            for r in range(29):
+                v=fr.FindRegister("x%d"%r).GetValueAsUnsigned()
+                if 0x100000000000<=v<0x800000000000:
+                    s=rd(proc,v,L+1)
+                    if s and s[:4]==PRE:
+                        gc=v; break
+            if gc:
+                for wp in t.watchpoint_iter(): t.DeleteWatchpoint(wp.GetID())
+                werr=lldb.SBError(); t.WatchAddress(gc,1,True,False,werr)
+                log.write("L=%d GC@%#x=%s (after %d rawhits)\n"%(L,gc,werr.Success(),rawhits)); stage=2
+            if rawhits>200 and stage==1:
+                log.write("L=%d no GC found in %d rawhits\n"%(L,rawhits)); break
             proc.Continue(); continue
         elif reason==lldb.eStopReasonWatchpoint and stage==2:
             hits+=1; pc=fr.GetPC()
@@ -57,10 +52,10 @@ def main():
                     s=rd(proc,v,L+2)
                     if s and all(32<=c<127 for c in s[:2]) and s[:L]!=MK:
                         log.write("     x%d->%r\n"%(r,s))
-            if hits>=60: break
+            if hits>=80: break
             proc.Continue(); continue
         else:
             proc.Continue()
-    if stage==2 and appreads==0: log.write("L=%d watched, NO app read (wrong len)\n"%L)
+    if stage==2 and appreads==0: log.write("L=%d GC watched, NO app read (len gate)\n"%L)
     log.close()
 main()
