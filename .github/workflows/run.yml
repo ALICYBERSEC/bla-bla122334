@@ -1,4 +1,4 @@
-name: run-clickme
+name: solve
 on: [push, workflow_dispatch]
 jobs:
   solve:
@@ -6,20 +6,22 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - run: uname -m; lipo -info click_me
-      - name: Prep slices
+      - name: run everything
         run: |
-          chmod +x click_me
-          lipo click_me -thin arm64 -output cm_arm64 2>/dev/null || true
-          lipo click_me -verify_arch arm64e && lipo click_me -thin arm64e -output cm_arm64e 2>/dev/null || true
-          chmod +x cm_* 2>/dev/null || true; ls -la cm_* click_me
-      - name: Run universal
-        run: 'timeout 60 ./click_me </dev/null 2>&1 | tee out_uni.txt || true'
-      - name: Run arm64 slice
-        run: 'timeout 60 ./cm_arm64 </dev/null 2>&1 | tee out_a64.txt || true'
-      - name: Run arm64e slice
-        run: 'timeout 60 arch -arm64e ./cm_arm64e </dev/null 2>&1 | tee out_a64e.txt || timeout 60 ./cm_arm64e </dev/null 2>&1 | tee out_a64e.txt || true'
-      - name: RESULTS
-        run: |
-          for f in out_uni.txt out_a64.txt out_a64e.txt; do echo "==== $f ===="; cat "$f" 2>/dev/null; echo; done
-          echo "==== FLAG? ===="; grep -aiE 'flare-on\.com|@flare' out_*.txt || echo "no flag line"
+          set +e
+          B=clickme_uni
+          echo "size: $(stat -f%z $B) bytes"; lipo -info $B; lipo -archs $B
+          chmod +x $B
+          for a in $(lipo -archs $B 2>/dev/null); do
+            lipo $B -thin $a -output cm_$a 2>/dev/null && chmod +x cm_$a
+          done
+          ls -la $B cm_* 2>/dev/null
+          run_one () {
+            echo "======== RUN $1 ========"
+            timeout 60 arch -arm64e ./$1 </dev/null 2>&1
+            echo "--- (retry plain) ---"
+            timeout 60 ./$1 </dev/null 2>&1
+          }
+          for b in $B cm_*; do [ -f "$b" ] && run_one "$b"; done | tee out_all.txt
+          echo "======== FLAG? ========"
+          grep -aiE 'flare-on\.com|@flare|flag\{' out_all.txt || echo "no @flare-on.com line"
