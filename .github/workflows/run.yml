@@ -11,12 +11,12 @@ jobs:
           set +e
           chmod +x real_bin
           : > cmp.txt
-          A="Zq7Wp3Kx9Rt2Yv8Nb5Jc"
-          for L in $(seq 3 16); do
+          A="Zq7Wp3Kx9Rt2Yv8Nb5JcAa1Bb2Cc3Dd4Ee5"
+          for L in $(seq 3 30); do
             echo "$L" > LEN.txt
-            m=$(printf '%s%s%s' "$A" "$A" "$A" | cut -c1-$L)
+            m=$(printf '%s' "$A" | cut -c1-$L)
             printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$m" "$m" "$m" "$m" "$m" "$m" > input.txt
             ( xcrun lldb -b -o "command script import ./solve.py" -o quit >/dev/null 2>&1 ) & P=$!
-            ( sleep 40; kill $P 2>/dev/null ) & wait $P 2>/dev/null
+            ( sleep 30; kill $P 2>/dev/null ) & wait $P 2>/dev/null
           done
           echo "==== cmp.txt ===="; cat cmp.txt
