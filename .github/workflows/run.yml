@@ -3,18 +3,17 @@ on: [push, workflow_dispatch]
 jobs:
   solve:
     runs-on: macos-15
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: count funcs
+      - name: lldb watchpoint
         run: |
           set +e
           chmod +x real_bin
-          clang -arch arm64 -dynamiclib -o cnt.dylib cnt.c && echo built
-          probe(){ ( printf "$2" | DYLD_INSERT_LIBRARIES=./cnt.dylib ./real_bin >x.txt 2>&1 ) & P=$!; ( sleep 8; kill $P 2>/dev/null ) & wait $P 2>/dev/null; echo "$1 :: $(grep -a '^CNT' x.txt|tail -1)"; }
-          probe "AAAA " 'AAAA\nAAAA\nAAAA\nAAAA\nAAAA\nAAAA\n'
-          probe "BBBB " 'BBBB\nBBBB\nBBBB\nBBBB\nBBBB\nBBBB\n'
-          probe "line1a" 'a\nA\nA\nA\nA\nA\n'
-          probe "line1b" 'b\nA\nA\nA\nA\nA\n'
-          probe "line1y" 'y\nA\nA\nA\nA\nA\n'
-          probe "long  " 'AAAAAAAAAAAAAAAAAAAA\nA\nA\nA\nA\nA\n'
+          printf 'AAAAAAAA\nBBBBBBBB\nCCCCCCCC\nDDDDDDDD\nEEEEEEEE\nFFFFFFFF\n' > input.txt
+          xcrun lldb --version
+          ( xcrun lldb -b -o "command script import ./solve.py" -o "quit" 2>&1 | tee lldb_stdout.txt ) & P=$!
+          ( sleep 150; kill $P 2>/dev/null ) & wait $P 2>/dev/null
+          echo "==== lldb stdout (tail) ===="; tail -30 lldb_stdout.txt
+          echo "==== program output ===="; cat prog_out.txt 2>/dev/null | head
+          echo "==== watchpoint log ===="; head -220 wlog.txt 2>/dev/null
