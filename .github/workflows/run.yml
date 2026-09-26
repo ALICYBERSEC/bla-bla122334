@@ -6,22 +6,20 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: run everything
+      - name: run real_bin
         run: |
           set +e
-          B=clickme_uni
-          echo "size: $(stat -f%z $B) bytes"; lipo -info $B; lipo -archs $B
-          chmod +x $B
-          for a in $(lipo -archs $B 2>/dev/null); do
-            lipo $B -thin $a -output cm_$a 2>/dev/null && chmod +x cm_$a
-          done
-          ls -la $B cm_* 2>/dev/null
-          run_one () {
-            echo "======== RUN $1 ========"
-            timeout 60 arch -arm64e ./$1 </dev/null 2>&1
-            echo "--- (retry plain) ---"
-            timeout 60 ./$1 </dev/null 2>&1
+          chmod +x real_bin
+          file real_bin; echo "size $(stat -f%z real_bin)"
+          guard () {
+            echo "======== $1 ========"
+            ( eval "$2" | ./real_bin >o.txt 2>&1 ) & P=$!
+            ( sleep 45; kill $P 2>/dev/null ) 2>/dev/null &
+            wait $P 2>/dev/null
+            cat o.txt
           }
-          for b in $B cm_*; do [ -f "$b" ] && run_one "$b"; done | tee out_all.txt
+          guard "no input"   'printf ""'
+          guard "empty line" 'printf "\n"'
+          guard "AAAA"       'printf "AAAA\n"'
           echo "======== FLAG? ========"
-          grep -aiE 'flare-on\.com|@flare|flag\{' out_all.txt || echo "no @flare-on.com line"
+          grep -aiE 'flare-on\.com|@flare|flag\{' o.txt 2>/dev/null || echo "(scan output above too)"
