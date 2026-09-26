@@ -3,7 +3,7 @@ on: [push, workflow_dispatch]
 jobs:
   solve:
     runs-on: macos-15
-    timeout-minutes: 22
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - name: sweep
@@ -12,11 +12,11 @@ jobs:
           chmod +x real_bin
           : > cmp.txt
           A="Zq7Wp3Kx9Rt2Yv8Nb5Jc"
-          for L in $(seq 3 18); do
+          for L in $(seq 3 16); do
             echo "$L" > LEN.txt
             m=$(printf '%s%s%s' "$A" "$A" "$A" | cut -c1-$L)
             printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$m" "$m" "$m" "$m" "$m" "$m" > input.txt
             ( xcrun lldb -b -o "command script import ./solve.py" -o quit >/dev/null 2>&1 ) & P=$!
-            ( sleep 55; kill $P 2>/dev/null ) & wait $P 2>/dev/null
+            ( sleep 60; kill $P 2>/dev/null ) & wait $P 2>/dev/null
           done
           echo "==== cmp.txt ===="; cat cmp.txt
