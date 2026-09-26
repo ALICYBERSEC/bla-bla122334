@@ -3,23 +3,23 @@ on: [push, workflow_dispatch]
 jobs:
   solve:
     runs-on: macos-15
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: Info
-        run: |
-          uname -m
-          file click_me
-      - name: Run click_me (plain)
+      - run: uname -m; lipo -info click_me
+      - name: Prep slices
         run: |
           chmod +x click_me
-          ( ./click_me </dev/null 2>&1 || true ) | tee out_plain.txt
-      - name: Run under Frida
+          lipo click_me -thin arm64 -output cm_arm64 2>/dev/null || true
+          lipo click_me -verify_arch arm64e && lipo click_me -thin arm64e -output cm_arm64e 2>/dev/null || true
+          chmod +x cm_* 2>/dev/null || true; ls -la cm_* click_me
+      - name: Run universal
+        run: 'timeout 60 ./click_me </dev/null 2>&1 | tee out_uni.txt || true'
+      - name: Run arm64 slice
+        run: 'timeout 60 ./cm_arm64 </dev/null 2>&1 | tee out_a64.txt || true'
+      - name: Run arm64e slice
+        run: 'timeout 60 arch -arm64e ./cm_arm64e </dev/null 2>&1 | tee out_a64e.txt || timeout 60 ./cm_arm64e </dev/null 2>&1 | tee out_a64e.txt || true'
+      - name: RESULTS
         run: |
-          python3 -m pip install --quiet frida-tools || true
-          ( printf 'AAAA\n' | frida -f ./click_me -l dump_flag.js --runtime=v8 2>&1 || true ) | tee out_frida.txt
-      - name: Show results
-        run: |
-          echo "=== PLAIN ==="; cat out_plain.txt
-          echo "=== FRIDA ==="; cat out_frida.txt
-          echo "=== any flag ==="; grep -aiE 'flare-on\.com' out_*.txt || echo "no flag line yet"
+          for f in out_uni.txt out_a64.txt out_a64e.txt; do echo "==== $f ===="; cat "$f" 2>/dev/null; echo; done
+          echo "==== FLAG? ===="; grep -aiE 'flare-on\.com|@flare' out_*.txt || echo "no flag line"
