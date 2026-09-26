@@ -1,0 +1,17 @@
+name: mine
+on: { workflow_dispatch: {} }
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        run: gcc -O3 -march=native -funroll-loops -pthread -o brute3 brute3.c
+      - name: sweep shard
+        run: |
+          ./brute3 ${{ matrix.shard }} 20 2>/dev/null | tee out.txt
+          if [ -s out.txt ]; then echo "=== FLAG FOUND IN THIS SHARD ==="; cat out.txt; exit 1; fi
