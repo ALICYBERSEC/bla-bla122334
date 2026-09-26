@@ -16,15 +16,14 @@ def main():
     t.BreakpointCreateByName("read")
     li=t.GetLaunchInfo(); li.AddOpenFileAction(0,"input.txt",True,False)
     err=lldb.SBError(); proc=t.Launch(li,err)
-    stage=0; hits=0; appreads=0; rawhits=0; gc=None
+    stage=0; hits=0; rawhits=0; gc=None
     while proc.GetState()==lldb.eStateStopped:
         th=proc.GetSelectedThread(); fr=th.GetFrameAtIndex(0); reason=th.GetStopReason()
         if reason==lldb.eStopReasonBreakpoint and stage==0:
             if fr.FindRegister("x0").GetValueAsUnsigned()==0:
-                buf=fr.FindRegister("x1").GetValueAsUnsigned()   # capture BEFORE StepOut
+                buf=fr.FindRegister("x1").GetValueAsUnsigned()
                 th.StepOut()
-                werr=lldb.SBError(); t.WatchAddress(buf,1,True,False,werr)
-                log.write("L=%d watch raw@%#x=%s\n"%(L,buf,werr.Success())); stage=1
+                werr=lldb.SBError(); t.WatchAddress(buf,1,True,False,werr); stage=1
                 proc.Continue(); continue
             proc.Continue(); continue
         elif reason==lldb.eStopReasonWatchpoint and stage==1:
@@ -33,29 +32,27 @@ def main():
                 v=fr.FindRegister("x%d"%r).GetValueAsUnsigned()
                 if 0x100000000000<=v<0x800000000000:
                     s=rd(proc,v,L+1)
-                    if s and s[:4]==PRE:
-                        gc=v; break
+                    if s and s[:4]==PRE: gc=v; break
             if gc:
                 for wp in t.watchpoint_iter(): t.DeleteWatchpoint(wp.GetID())
-                werr=lldb.SBError(); t.WatchAddress(gc,1,True,False,werr)
-                log.write("L=%d GC@%#x=%s (after %d rawhits)\n"%(L,gc,werr.Success(),rawhits)); stage=2
+                werr=lldb.SBError(); t.WatchAddress(gc,1,True,False,werr); stage=2
             if rawhits>200 and stage==1:
-                log.write("L=%d no GC found in %d rawhits\n"%(L,rawhits)); break
+                log.write("L=%d no GC\n"%L); break
             proc.Continue(); continue
         elif reason==lldb.eStopReasonWatchpoint and stage==2:
             hits+=1; pc=fr.GetPC()
-            if pc<0x180000000:
-                appreads+=1
-                log.write("  L=%d APP pc=%#x %s\n"%(L,pc,dis1(t,pc)))
-                for r in range(29):
-                    v=fr.FindRegister("x%d"%r).GetValueAsUnsigned()
-                    s=rd(proc,v,L+2)
-                    if s and all(32<=c<127 for c in s[:2]) and s[:L]!=MK:
-                        log.write("     x%d->%r\n"%(r,s))
-            if hits>=80: break
+            exp=[]
+            for r in range(29):
+                v=fr.FindRegister("x%d"%r).GetValueAsUnsigned()
+                s=rd(proc,v,L+2)
+                if s and all(32<=c<127 for c in s[:2]) and s[:L]!=MK and not s.startswith(b"Zq7"):
+                    exp.append("x%d->%r"%(r,s))
+            if exp:
+                log.write("  L=%d hit%d pc=%#x %s\n     %s\n"%(L,hits,pc,dis1(t,pc)," ".join(exp)))
+            if hits>=60: break
             proc.Continue(); continue
         else:
             proc.Continue()
-    if stage==2 and appreads==0: log.write("L=%d GC watched, NO app read (len gate)\n"%L)
+    if stage==2 and hits==0: log.write("L=%d GC watched, ZERO reads (len gate)\n"%L)
     log.close()
 main()
