@@ -3,17 +3,21 @@ on: [push, workflow_dispatch]
 jobs:
   solve:
     runs-on: macos-15
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: lldb watchpoint
+      - name: memcmp break sweep
         run: |
           set +e
           chmod +x real_bin
-          printf 'AAAAAAAA\nBBBBBBBB\nCCCCCCCC\nDDDDDDDD\nEEEEEEEE\nFFFFFFFF\n' > input.txt
-          xcrun lldb --version
-          ( xcrun lldb -b -o "command script import ./solve.py" -o "quit" 2>&1 | tee lldb_stdout.txt ) & P=$!
-          ( sleep 150; kill $P 2>/dev/null ) & wait $P 2>/dev/null
-          echo "==== lldb stdout (tail) ===="; tail -30 lldb_stdout.txt
-          echo "==== program output ===="; cat prog_out.txt 2>/dev/null | head
-          echo "==== watchpoint log ===="; head -220 wlog.txt 2>/dev/null
+          : > cmp.txt
+          for L in $(seq 1 26); do
+            ch=$(printf 'Z%.0s' $(seq 1 $L))
+            printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$ch" "$ch" "$ch" "$ch" "$ch" "$ch" > input.txt
+            ( xcrun lldb -b -o "command script import ./solve.py" -o quit >/dev/null 2>&1 ) & P=$!
+            ( sleep 25; kill $P 2>/dev/null ) & wait $P 2>/dev/null
+          done
+          echo "==== comparisons captured (non-Z side = expected) ===="
+          cat cmp.txt
+          echo "==== unique B/A values ===="
+          grep -aE '^  [AB]=' cmp.txt | grep -avE "Z{3}" | sort -u
